@@ -747,6 +747,8 @@ class LoopAppManager: NSObject {
                 switch carbEntryLink {
                 case let .carbEntryDetected(value):
                     statusTableViewController?.presentCarbEntryScreen(nil, value: value)
+                case let .carbsSuggestion(id):
+                    statusTableViewController?.presentCarbsSuggestion(id: id)
                 }
             } else {
                 statusTableViewController?.presentCarbEntryScreen(nil)

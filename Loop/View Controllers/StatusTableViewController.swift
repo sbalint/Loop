@@ -104,6 +104,12 @@ final class StatusTableViewController: LoopChartsTableViewController {
         let notificationCenter = NotificationCenter.default
 
         notificationObservers += [
+            notificationCenter.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.resetDeferredCarbsSuggestions()
+                    self?.checkCarbsSuggestions()
+                }
+            },
             notificationCenter.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, self.displayPreferencesSnapshot != self.currentDisplayPreferences else { return }
@@ -281,6 +287,8 @@ final class StatusTableViewController: LoopChartsTableViewController {
         analyticsServicesManager?.didDisplayStatusScreen()
 
         deviceManager.checkDeliveryUncertaintyState()
+
+        checkCarbsSuggestions()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -1583,15 +1591,18 @@ final class StatusTableViewController: LoopChartsTableViewController {
         presentCarbEntryScreen(nil)
     }
 
-    func presentCarbEntryScreen(_ activity: NSUserActivity?, value: LoopQuantity? = nil) {
+    func presentCarbEntryScreen(_ activity: NSUserActivity?, value: LoopQuantity? = nil, suggestion: CarbsMealSuggestion? = nil) {
         let navigationWrapper: UINavigationController
         if FeatureFlags.simpleBolusCalculatorEnabled && !settingsManager.dosingEnabled {
             let viewModel = SimpleBolusViewModel(delegate: loopManager, displayMealEntry: true, displayGlucosePreference: deviceManager.displayGlucosePreference)
             if let activity = activity {
                 viewModel.restoreUserActivityState(activity)
             }
-            if let carbString = value?.doubleValue(for: .gram) {
+            if let carbString = value?.doubleValue(for: .gram) ?? suggestion?.carbs {
                 viewModel.enteredCarbString = carbString.formatted()
+            }
+            if let suggestion {
+                CarbsSuggestionStore.shared.mark(suggestion.id, as: .reviewed)
             }
             let bolusEntryView = SimpleBolusView(viewModel: viewModel).environmentObject(deviceManager.displayGlucosePreference)
             let hostingController = DismissibleHostingController(rootView: bolusEntryView, isModalInPresentation: false)
@@ -1605,6 +1616,9 @@ final class StatusTableViewController: LoopChartsTableViewController {
             viewModel.analyticsServicesManager = loopManager.analyticsServicesManager
             if let activity {
                 viewModel.restoreUserActivityState(activity)
+            }
+            if let suggestion {
+                apply(suggestion, to: viewModel)
             }
             let carbEntryView = CarbEntryView(viewModel: viewModel)
                 .environmentObject(deviceManager.displayGlucosePreference)

@@ -19,6 +19,8 @@ enum Deeplink: Hashable {
     
     enum CarbEntryLink: Hashable {
         case carbEntryDetected(value: LoopQuantity)
+        /// A meal offered by the Carbs app: loop://carb-entry?carbs-suggestion=<id>
+        case carbsSuggestion(id: String)
     }
     
     case carbEntry(CarbEntryLink?)
@@ -45,7 +47,9 @@ enum Deeplink: Hashable {
         
         switch deeplinkHost {
         case .carbEntry:
-            if let value = components?.queryItems?.first(where: { $0.name == "value" })?.value, let doubleValue = Double(value) {
+            if let id = components?.queryItems?.first(where: { $0.name == "carbs-suggestion" })?.value, !id.isEmpty {
+                self = .carbEntry(.carbsSuggestion(id: id))
+            } else if let value = components?.queryItems?.first(where: { $0.name == "value" })?.value, let doubleValue = Double(value) {
                 self = .carbEntry(.carbEntryDetected(value: LoopQuantity(unit: .gram, doubleValue: doubleValue)))
             } else {
                 self = .carbEntry(nil)
