@@ -9,7 +9,6 @@
 import WatchConnectivity
 import WatchKit
 import HealthKit
-import LoopAlgorithm
 import Intents
 import os
 import os.log
@@ -25,14 +24,27 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
     private var observers: [NSKeyValueObservation] = []
     private var notifications: [NSObjectProtocol] = []
 
+    // WKApplication.shared().delegate is nil under the SwiftUI app lifecycle.
+    private static var instance: ExtensionDelegate!
+
     static func shared() -> ExtensionDelegate {
-        return WKApplication.shared().extensionDelegate
+        return instance
     }
 
     let loopManager = LoopDataManager.shared
 
+    let usageRecorder = WatchUsageRecorder { summary in
+        guard WCSession.default.activationState == .activated else {
+            return false
+        }
+        WCSession.default.transferUserInfo(WatchUsageSummaryUserInfo(summary: summary).rawValue)
+        return true
+    }
+
     override init() {
         super.init()
+
+        Self.instance = self
 
         let session = WCSession.default
         session.delegate = self
@@ -85,6 +97,8 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
     }
 
     func applicationDidBecomeActive() {
+        usageRecorder.didBecomeActive()
+
         if WCSession.default.activationState != .activated {
             WCSession.default.activate()
         }
@@ -100,6 +114,13 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
     }
 
     func applicationWillResignActive() {
+        usageRecorder.willResignActive()
+    }
+
+    func handleUserActivity(_ userInfo: [AnyHashable: Any]?) {
+        if userInfo?[CLKLaunchedTimelineEntryDateKey] != nil {
+            usageRecorder.didLaunchFromComplication()
+        }
     }
 
     func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {
@@ -124,7 +145,7 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
             case let task as WKSnapshotRefreshBackgroundTask:
                 log.default("Processing WKSnapshotRefreshBackgroundTask")
                 task.setTaskCompleted(restoredDefaultState: false, estimatedSnapshotExpiration: Date(timeIntervalSinceNow: TimeInterval(minutes: 5)), userInfo: nil)
-                return  // Don't call the standard setTaskCompleted handler
+                continue  // Don't call the standard setTaskCompleted handler
             case is WKURLSessionRefreshBackgroundTask:
                 break
             case let task as WKWatchConnectivityRefreshBackgroundTask:
@@ -137,7 +158,7 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
                 }
 
                 completePendingConnectivityTasksIfNeeded()
-                return // Defer calls to the setTaskCompleted handler
+                continue // Defer calls to the setTaskCompleted handler
             default:
                 break
             }
@@ -205,6 +226,7 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
     func handle(_ userActivity: NSUserActivity) {
         switch userActivity.activityType {
         case NSUserActivity.newCarbEntryActivityType, NSUserActivity.didAddCarbEntryOnWatchActivityType:
+            usageRecorder.didDisplayScreen("carbEntry")
             loopManager.bolusViewModel = CarbAndBolusFlowViewModel(configuration: .carbEntry(nil))
         default:
             break
@@ -270,6 +292,9 @@ extension ExtensionDelegate: WCSessionDelegate {
 
         if activationState == .activated {
             updateContext(session.receivedApplicationContext)
+            Task { @MainActor in
+                self.usageRecorder.sendCompletedDays()
+            }
             Task {
                 await loopManager.requestSettingsUpdate()
             }
@@ -319,6 +344,8 @@ extension ExtensionDelegate: UNUserNotificationCenterDelegate {
 
         log.default("UNNotificationResponse rootInterfaceController = %{public}@", String(describing: WKApplication.shared().rootInterfaceController))
         log.default("UNNotificationResponse visibleInterfaceController = %{public}@", String(describing: WKApplication.shared().visibleInterfaceController))
+
+        usageRecorder.didRespondToNotification()
 
         switch response.actionIdentifier {
         case UNNotificationDefaultActionIdentifier:
@@ -397,12 +424,5 @@ extension ExtensionDelegate {
         dispatchPrecondition(condition: .onQueue(.main))
 
         WKApplication.shared().rootInterfaceController?.presentAlert(withTitle: error.localizedDescription, message: (error as NSError).localizedRecoverySuggestion ?? (error as NSError).localizedFailureReason, preferredStyle: .alert, actions: [WKAlertAction.dismissAction()])
-    }
-}
-
-
-fileprivate extension WKApplication {
-    var extensionDelegate: ExtensionDelegate! {
-        return delegate as? ExtensionDelegate
     }
 }

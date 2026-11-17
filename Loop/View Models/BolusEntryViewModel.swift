@@ -12,11 +12,11 @@ import Intents
 import os.log
 import LoopCore
 import LoopKit
+import LoopAlgorithm
 import LoopKitUI
 import LoopUI
 import SwiftUI
 import SwiftCharts
-import LoopAlgorithm
 
 @MainActor
 protocol BolusEntryViewModelDelegate: AnyObject {
@@ -27,14 +27,14 @@ protocol BolusEntryViewModelDelegate: AnyObject {
     var mostRecentGlucoseDataDate: Date? { get }
     var mostRecentPumpDataDate: Date? { get }
 
-    func fetchData(for baseTime: Date?, presumePresetEndingNow: Bool, ensureDosingCoverageStart: Date?, projectOngoingDoses: Bool) async throws -> StoredDataAlgorithmInput
+    func fetchData(for baseTime: Date?, presumePresetEndingNow: Bool, ensureDosingCoverageStart: Date?, ensureCarbCoverageStart: Date?, projectOngoingDoses: Bool) async throws -> StoredDataAlgorithmInput
     func effectiveGlucoseTargetRangeSchedule(presumingMealEntry: Bool) -> GlucoseRangeSchedule?
 
     func addCarbEntry(_ carbEntry: NewCarbEntry) async throws -> StoredCarbEntry
     func replaceCarbEntry(_ oldEntry: StoredCarbEntry, with update: CarbEntryUpdate) async throws -> StoredCarbEntry
     func saveGlucose(sample: NewGlucoseSample) async throws -> StoredGlucoseSample
     func storeManualBolusDosingDecision(_ bolusDosingDecision: BolusDosingDecision, withDate date: Date) async
-    func enactBolus(units: Double, decisionId: UUID?, activationType: BolusActivationType) async throws
+    func enactBolus(units: Double, metadata: DoseMetadata, activationType: BolusActivationType) async throws
 
     func insulinModel(for type: InsulinType?) -> InsulinModel
 
@@ -403,7 +403,7 @@ final class BolusEntryViewModel: ObservableObject {
         if amountToDeliver > 0 {
             savedPreMealOverride = nil
             do {
-                try await delegate.enactBolus(units: amountToDeliver, decisionId: dosingDecision.id, activationType: activationType)
+                try await delegate.enactBolus(units: amountToDeliver, metadata: DoseMetadata(origin: .user, device: .phone, decisionId: dosingDecision.id), activationType: activationType)
             } catch {
                 log.error("Failed to enact bolus: %{public}@", String(describing: error))
             }
@@ -530,7 +530,7 @@ final class BolusEntryViewModel: ObservableObject {
                 startDate: startDate,
                 endDate: startDate,
                 volume: enteredBolus.doubleValue(for: .internationalUnit),
-                insulinModel: insulinModel
+                insulinModel: AlgorithmInsulinModel(insulinModel)
             )
 
             let (glucoseHistory, prediction) = try await delegate.generatePrediction(
@@ -737,12 +737,12 @@ extension BolusEntryViewModel {
     
     var isGlucoseDataStale: Bool {
         guard let latestGlucoseDataDate = delegate?.mostRecentGlucoseDataDate else { return true }
-        return now().timeIntervalSince(latestGlucoseDataDate) > LoopAlgorithm.inputDataRecencyInterval
+        return now().timeIntervalSince(latestGlucoseDataDate) > LoopCoreConstants.inputDataRecencyInterval
     }
     
     var isPumpDataStale: Bool {
         guard let latestPumpDataDate = delegate?.mostRecentPumpDataDate else { return true }
-        return now().timeIntervalSince(latestPumpDataDate) > LoopAlgorithm.inputDataRecencyInterval
+        return now().timeIntervalSince(latestPumpDataDate) > LoopCoreConstants.inputDataRecencyInterval
     }
 
     var isManualGlucosePromptVisible: Bool {

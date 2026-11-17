@@ -331,6 +331,24 @@ class AlertManagerTests: XCTestCase {
             XCTAssertEqual(request.content.sound, .defaultCriticalSound(withAudioVolume: 0))
         }
     }
+
+    func testBluetoothPoweredOffIssuesDelayedTimeSensitiveAlert() async {
+        mockModalScheduler.alertScheduledExpectation = expectation(description: "alert scheduled")
+        alertManager.bluetoothDidUpdateState(.poweredOff)
+        await fulfillment(of: [mockModalScheduler.alertScheduledExpectation!], timeout: 1)
+
+        let alert = mockModalScheduler.scheduledAlert
+        XCTAssertEqual(alert?.identifier.alertIdentifier, "bluetoothPoweredOff")
+        XCTAssertEqual(alert?.trigger, .delayed(interval: AlertManager.bluetoothPoweredOffAlertDelay))
+        XCTAssertEqual(alert?.interruptionLevel, .timeSensitive)
+    }
+
+    func testBluetoothPoweredOnRetractsAlert() async {
+        mockModalScheduler.alertUnscheduledExpectation = expectation(description: "alert unscheduled")
+        alertManager.bluetoothDidUpdateState(.poweredOn)
+        await fulfillment(of: [mockModalScheduler.alertUnscheduledExpectation!], timeout: 1)
+        XCTAssertEqual(mockModalScheduler.unscheduledAlertIdentifier?.alertIdentifier, "bluetoothPoweredOff")
+    }
 }
 
 extension Swift.Result {
@@ -339,5 +357,21 @@ extension Swift.Result {
         case .failure: return nil
         case .success(let s): return s
         }
+    }
+}
+
+@MainActor
+class CriticalAlertAudioPlayerTests: XCTestCase {
+    func testStopForAnotherAlertKeepsPlaying() {
+        let player = CriticalAlertAudioPlayer()
+        let low = Alert.Identifier(managerIdentifier: "GlucoseAlertManager", alertIdentifier: "glucose.low")
+        let timeChange = Alert.Identifier(managerIdentifier: "Loop", alertIdentifier: "significantTimeChange")
+
+        player.play(soundNamed: "critical.caf", boostVolume: false, for: low)
+        player.stop(for: timeChange)
+        XCTAssertEqual(player.playingAlert, low)
+
+        player.stop(for: low)
+        XCTAssertNil(player.playingAlert)
     }
 }

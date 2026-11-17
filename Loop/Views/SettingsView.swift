@@ -362,7 +362,8 @@ extension SettingsView {
                     selected: setupChange,
                     loadHistory: { [viewModel] in try await viewModel.setupHistory?() ?? SetupHistory(settings: [], experiments: []) },
                     glucoseStore: glucoseStore,
-                    insulinDeliveryHistory: viewModel.insulinDeliveryHistory
+                    insulinDeliveryHistory: viewModel.insulinDeliveryHistory,
+                    outcomesPackageBuilder: viewModel.outcomesPackageBuilder
                 ))) {
                     LargeButton(
                         action: {},
@@ -416,7 +417,8 @@ extension SettingsView {
             NavigationLink(destination: HealthAccessView(
                 glucoseSharingStatus: { healthKitSharingStatus(for: HealthKitSampleStore.glucoseType) },
                 insulinSharingStatus: { healthKitSharingStatus(for: HealthKitSampleStore.insulinQuantityType) },
-                carbSharingStatus: { healthKitSharingStatus(for: HealthKitSampleStore.carbType) }
+                carbSharingStatus: { healthKitSharingStatus(for: HealthKitSampleStore.carbType) },
+                exerciseDataSharing: viewModel.exerciseDataSharing
             )) {
                 LargeButton(
                     action: {},

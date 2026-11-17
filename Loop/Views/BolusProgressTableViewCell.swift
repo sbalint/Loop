@@ -9,7 +9,6 @@
 import Foundation
 import LoopKit
 import LoopUI
-import LoopAlgorithm
 import MKRingProgressView
 
 
@@ -80,7 +79,6 @@ public class BolusProgressTableViewCell: UITableViewCell {
         paddedView.layer.masksToBounds = true
         paddedView.layer.cornerRadius = 10
         paddedView.layer.borderWidth = 1
-        paddedView.layer.borderColor = UIColor.systemGray5.cgColor
         
         updateColors()
     }
@@ -91,6 +89,7 @@ public class BolusProgressTableViewCell: UITableViewCell {
     }
 
     private func updateColors() {
+        paddedView.layer.borderColor = UIColor.systemGray5.resolvedColor(with: traitCollection).cgColor
         progressIndicator.startColor = tintColor
         progressIndicator.endColor = tintColor
         stopSquare.backgroundColor = tintColor

@@ -11,7 +11,6 @@ import HealthKit
 import LoopKit
 import LoopKitUI
 import LoopCore
-import LoopAlgorithm
 
 @testable import Loop
 
@@ -289,7 +288,7 @@ extension SimpleBolusViewModelTests: SimpleBolusViewModelDelegate {
     }
 
 
-    func enactBolus(units: Double, decisionId: UUID?, activationType: BolusActivationType) async throws {
+    func enactBolus(units: Double, metadata: DoseMetadata, activationType: BolusActivationType) async throws {
         enactedBolus = (units: units, activationType: activationType)
     }
 

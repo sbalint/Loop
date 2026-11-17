@@ -8,7 +8,6 @@
 
 import XCTest
 import HealthKit
-import LoopAlgorithm
 import LoopKit
 import LoopKitUI
 import LoopCore
@@ -108,13 +107,36 @@ final class DeviceDataManagerTests: XCTestCase {
         deviceDataManager.cgmManager = cgmManager
     }
 
+    func testEnactBolusStoresMetadataForTheDoseIdSentToThePump() async throws {
+        let decisionId = UUID()
+        pumpManager.enactedDoseIds = []
+
+        try await deviceDataManager.enactBolus(units: 1, metadata: DoseMetadata(origin: .user, device: .watch, decisionId: decisionId), activationType: .manualRecommendationAccepted)
+
+        let doseId = try XCTUnwrap(pumpManager.enactedDoseIds.first)
+        let metadata = try await deviceDataManager.doseMetadataStore.metadata(for: doseId)
+        XCTAssertEqual(metadata, DoseMetadata(origin: .user, device: .watch, decisionId: decisionId, activationType: .manualRecommendationAccepted))
+    }
+
+    func testAutomaticDosesStoreMetadataWithTheDecision() async throws {
+        let decisionId = UUID()
+        pumpManager.enactedDoseIds = []
+
+        try await deviceDataManager.send(bolus: 0.5, tempBasal: TempBasalRecommendation(unitsPerHour: 1, duration: .minutes(30)), decisionId: decisionId, to: pumpManager)
+
+        XCTAssertEqual(pumpManager.enactedDoseIds.count, 2)
+        let metadata = try await deviceDataManager.doseMetadataStore.metadata(for: pumpManager.enactedDoseIds)
+        XCTAssertEqual(metadata[pumpManager.enactedDoseIds[0]], DoseMetadata(origin: .automatic, device: .phone, decisionId: decisionId))
+        XCTAssertEqual(metadata[pumpManager.enactedDoseIds[1]], DoseMetadata(origin: .automatic, device: .phone, decisionId: decisionId, activationType: .automatic))
+    }
+
     func testValidateMaxTempBasalDoesntCancelTempBasalIfHigher() async throws {
         let dose = DoseEntry(
             type: .tempBasal,
             startDate: Date(),
             value: 3.0,
             unit: .unitsPerHour,
-            decisionId: nil,
+            doseId: nil,
             automatic: true
         )
         pumpManager.status.basalDeliveryState = .tempBasal(dose)
@@ -137,7 +159,7 @@ final class DeviceDataManagerTests: XCTestCase {
             endDate: nil,
             value: 5.0,
             unit: .unitsPerHour,
-            decisionId: nil
+            doseId: nil
         )
         pumpManager.status.basalDeliveryState = .tempBasal(dose)
 
@@ -157,7 +179,7 @@ final class DeviceDataManagerTests: XCTestCase {
             startDate: Date(),
             value: 5.0,
             unit: .unitsPerHour,
-            decisionId: nil
+            doseId: nil
         )
         pumpManager.status.basalDeliveryState = .tempBasal(dose)
 
@@ -168,8 +190,8 @@ final class DeviceDataManagerTests: XCTestCase {
         loopControlMock.cancelExpectation = expectation(description: "Temp basal cancel")
 
         if let deviceManager = self.deviceDataManager {
-            cgmManager.delegateQueue.async {
-                deviceManager.cgmManager(self.cgmManager, hasNew: .unreliableData)
+            Task.detached {
+                await deviceManager.cgmManager(self.cgmManager, hasNew: .unreliableData)
             }
         }
 

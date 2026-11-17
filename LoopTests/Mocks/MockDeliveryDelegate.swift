@@ -8,8 +8,8 @@
 
 import Foundation
 import LoopKit
-import LoopAlgorithm
 @testable import Loop
+@testable import LoopCore
 
 class MockDeliveryDelegate: DeliveryDelegate {
     var isSuspended: Bool = false
@@ -37,7 +37,7 @@ class MockDeliveryDelegate: DeliveryDelegate {
     var lastBolus: Double?
     var lastBolusActivationType: BolusActivationType?
 
-    func enactBolus(units: Double, decisionId: UUID?, activationType: BolusActivationType) async throws {
+    func enactBolus(units: Double, metadata: DoseMetadata, activationType: BolusActivationType) async throws {
         lastBolus = units
         lastBolusActivationType = activationType
     }

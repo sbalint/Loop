@@ -59,6 +59,7 @@ public final class AlertManager {
     let alertStore: AlertStore
 
     private let bluetoothPoweredOffIdentifier = Alert.Identifier(managerIdentifier: managerIdentifier, alertIdentifier: "bluetoothPoweredOff")
+    static let bluetoothPoweredOffAlertDelay = TimeInterval(minutes: 10)
 
     var analyticsServicesManager: AnalyticsServicesManager
 
@@ -110,7 +111,8 @@ public final class AlertManager {
             .sink { [weak self] publisher in
                 if let loopDataManager = publisher.object as? LoopDataManager {
                     Task { @MainActor in
-                        await self?.loopDidComplete(loopDataManager.lastLoopCompleted)
+                        let manualTempBasalRunning = loopDataManager.deliveryDelegate?.isManualTempBasalRunning == true
+                        await self?.loopDidComplete(manualTempBasalRunning ? nil : loopDataManager.lastLoopCompleted)
                     }
                 }
             }
@@ -177,8 +179,8 @@ public final class AlertManager {
             await issueAlert(Alert(identifier: bluetoothPoweredOffIdentifier,
                              foregroundContent: fgcontent,
                              backgroundContent: bgcontent,
-                             trigger: .immediate,
-                             interruptionLevel: .critical))
+                             trigger: .delayed(interval: Self.bluetoothPoweredOffAlertDelay),
+                             interruptionLevel: .timeSensitive))
         }
     }
 
@@ -358,6 +360,7 @@ extension AlertManager: AlertManagerResponder {
     
     func acknowledgeAlert(identifier: Alert.Identifier) async throws {
         self.log.default("acknowledgeAlert called for identifier %{public}@", String(describing: identifier))
+        analyticsServicesManager.didAcknowledgeAlert()
         if let responder = responders[identifier.managerIdentifier]?.value {
             do {
                 try await responder.acknowledgeAlert(alertIdentifier: identifier.alertIdentifier)
@@ -368,7 +371,7 @@ extension AlertManager: AlertManagerResponder {
         userNotificationAlertScheduler.alertWasAcknowledged(identifier: identifier)
         await modalAlertScheduler.removePresentedAlert(identifier: identifier)
         criticalAlertAlarmScheduler.cancelAlarm(for: identifier)
-        criticalAlertAudioPlayer.stop()
+        criticalAlertAudioPlayer.stop(for: identifier)
         try await alertStore.recordAcknowledgement(of: identifier)
     }
 
@@ -440,7 +443,7 @@ extension AlertManager: AlertIssuer {
         userNotificationAlertScheduler.scheduleAlert(alert, muted: muted || inAppSound != nil)
         if let inAppSound {
             log.default("Playing %{public}@ through silent mode for %{public}@", inAppSound, String(describing: alert.identifier))
-            criticalAlertAudioPlayer.play(soundNamed: inAppSound, boostVolume: false)
+            criticalAlertAudioPlayer.play(soundNamed: inAppSound, boostVolume: false, for: alert.identifier)
         }
         playCriticalAlertAudioFallbackIfNeeded(for: alert, muted: muted, issuedDate: issuedDate)
     }
@@ -459,7 +462,7 @@ extension AlertManager: AlertIssuer {
         await modalAlertScheduler.unscheduleAlert(identifier: identifier)
         userNotificationAlertScheduler.unscheduleAlert(identifier: identifier)
         criticalAlertAlarmScheduler.cancelAlarm(for: identifier)
-        criticalAlertAudioPlayer.stop()
+        criticalAlertAudioPlayer.stop(for: identifier)
     }
 
     /// When the system can't deliver a true Critical Alert (no
@@ -491,13 +494,13 @@ extension AlertManager: AlertIssuer {
         let soundName = alert.sound?.filename ?? "critical.caf"
         if criticalAlertAlarmScheduler.scheduleAlarm(for: alert, onScheduleFailure: { [weak self] in
             self?.log.default("AlarmKit scheduling failed for %@; playing audio fallback", String(describing: alert.identifier))
-            self?.criticalAlertAudioPlayer.play(soundNamed: soundName)
+            self?.criticalAlertAudioPlayer.play(soundNamed: soundName, for: alert.identifier)
         }) {
             log.default("Scheduled AlarmKit alarm for critical alert %@ (no entitlement or user-disabled)", String(describing: alert.identifier))
             return
         }
         log.default("Playing audio fallback for critical alert %@ with sound %@ (no entitlement or user-disabled)", String(describing: alert.identifier), soundName)
-        criticalAlertAudioPlayer.play(soundNamed: soundName)
+        criticalAlertAudioPlayer.play(soundNamed: soundName, for: alert.identifier)
     }
 
     private func rescheduleAlertWithSchedulers(_ alert: Alert, issuedDate: Date) async {
@@ -871,15 +874,6 @@ extension AlertManager {
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { _ in
             cancelAction()
         }))
-        
-        await alertPresenter.present(alert, animated: true)
-    }
-    
-    func presentCouldNotResetLoopAlert(error: Error) async {
-        let titleString = String(format: NSLocalizedString("Could Not Restart %1$@", comment: "Format string for title of reset loop alert. (1: App name)"), Bundle.main.bundleDisplayName)
-        let message = String(format: NSLocalizedString("While trying to restart %1$@ an error occured.\n\n%2$@", comment: "Format string for message of reset loop alert. (1: App name) (2: error description)"), Bundle.main.bundleDisplayName, error.localizedDescription)
-        let alert = UIAlertController(title: titleString, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: "Cancel button for reset loop alert"), style: .cancel))
         
         await alertPresenter.present(alert, animated: true)
     }

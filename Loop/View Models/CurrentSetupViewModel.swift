@@ -7,6 +7,7 @@
 
 import Foundation
 import LoopKit
+import LoopCore
 
 @MainActor
 final class CurrentSetupViewModel: ObservableObject {
@@ -18,6 +19,7 @@ final class CurrentSetupViewModel: ObservableObject {
     @Published private(set) var timeInRange: [Date: Double] = [:]
     @Published private(set) var isLoading = true
 
+    let outcomesPackageBuilder: OutcomesPackageBuilder?
     private let loadHistory: () async throws -> SetupHistory
     private let glucoseStore: GlucoseStoreProtocol?
     private let insulinDeliveryHistory: ((Int) async throws -> InsulinDeliveryHistory)?
@@ -26,14 +28,18 @@ final class CurrentSetupViewModel: ObservableObject {
 
     private var samples: [StoredGlucoseSample] = []
     private var insulin: InsulinDeliveryHistory?
+    /// Taken before the data loads, so the data covers up to it
+    private var loadedAt: Date?
 
     init(selected: SetupChange?,
          loadHistory: @escaping () async throws -> SetupHistory,
          glucoseStore: GlucoseStoreProtocol?,
          insulinDeliveryHistory: ((Int) async throws -> InsulinDeliveryHistory)?,
+         outcomesPackageBuilder: OutcomesPackageBuilder? = nil,
          cacheDuration: TimeInterval = Bundle.main.localCacheDuration,
          now: @escaping () -> Date = { Date() }) {
         self.selected = selected
+        self.outcomesPackageBuilder = outcomesPackageBuilder
         self.loadHistory = loadHistory
         self.glucoseStore = glucoseStore
         self.insulinDeliveryHistory = insulinDeliveryHistory
@@ -53,6 +59,7 @@ final class CurrentSetupViewModel: ObservableObject {
         self.history = history
         selected = history.latest
         let end = now()
+        loadedAt = end
         if let glucoseStore {
             samples = (try? await glucoseStore.getGlucoseSamples(start: end - cacheDuration, end: end))?
                 .filter { !$0.isDisplayOnly && !$0.wasUserEntered } ?? []
@@ -75,6 +82,6 @@ final class CurrentSetupViewModel: ObservableObject {
             comparison = nil
             return
         }
-        comparison = SetupComparison(change: selected, end: history.end(of: selected), samples: samples, insulinHistory: insulin, now: now())
+        comparison = SetupComparison(change: selected, samples: samples, insulinHistory: insulin, now: loadedAt ?? now())
     }
 }

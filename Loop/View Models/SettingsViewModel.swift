@@ -7,7 +7,6 @@
 //
 
 import Combine
-import LoopAlgorithm
 import LoopCore
 import LoopKit
 import LoopKitUI
@@ -122,6 +121,10 @@ class SettingsViewModel {
     @ObservationIgnored var insulinDeliveryHistory: ((Int) async throws -> InsulinDeliveryHistory)?
 
     @ObservationIgnored var setupHistory: (() async throws -> SetupHistory)?
+
+    @ObservationIgnored var outcomesPackageBuilder: OutcomesPackageBuilder?
+
+    @ObservationIgnored var exerciseDataSharing: ExerciseDataSharing?
 
     @MainActor
     var showDeleteTestData: Bool {
